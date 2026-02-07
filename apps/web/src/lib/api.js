@@ -10,8 +10,15 @@ async function request(path, options = {}) {
   return data;
 }
 
-export function createRoom() {
-  return request('/api/rooms', { method: 'POST' });
+export function fetchCategories() {
+  return request('/api/rooms/categories');
+}
+
+export function createRoom(categories = []) {
+  return request('/api/rooms', {
+    method: 'POST',
+    body: JSON.stringify({ categories }),
+  });
 }
 
 export function joinRoom(code, clientId) {

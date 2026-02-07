@@ -2,11 +2,25 @@ import { query } from '../db/pool.js';
 
 /**
  * Pick a random question that hasn't been used in this room.
+ * Filters by the room's selected categories (if any).
  * If all questions are exhausted, reset usage and re-pick.
  * Returns: { id, text, category } or null if no questions at all.
  */
 export async function pickQuestion(roomId, allQuestions) {
   if (allQuestions.length === 0) return null;
+
+  // Get room's selected categories
+  const { rows: roomRows } = await query(
+    `SELECT categories FROM rooms WHERE id = $1`, [roomId]
+  );
+  const selectedCategories = roomRows[0]?.categories;
+
+  // Filter by selected categories (if set)
+  const pool = (selectedCategories && selectedCategories.length > 0)
+    ? allQuestions.filter((q) => selectedCategories.includes(q.category))
+    : allQuestions;
+
+  if (pool.length === 0) return null;
 
   // Get used question IDs for this room
   const { rows: usedRows } = await query(
@@ -16,12 +30,12 @@ export async function pickQuestion(roomId, allQuestions) {
   const usedIds = new Set(usedRows.map((r) => r.question_id));
 
   // Filter available questions
-  let available = allQuestions.filter((q) => !usedIds.has(q.id));
+  let available = pool.filter((q) => !usedIds.has(q.id));
 
   // If all used, reset and reshuffle
   if (available.length === 0) {
     await query(`DELETE FROM room_questions WHERE room_id = $1`, [roomId]);
-    available = [...allQuestions];
+    available = [...pool];
     console.log(`[game] Room ${roomId}: all questions used, reshuffled`);
   }
 
@@ -39,22 +53,24 @@ export async function pickQuestion(roomId, allQuestions) {
 }
 
 /**
- * Assign distinct secret numbers (1–N) to players, shuffled randomly.
- * N = number of players (capped at 10 for the game).
+ * Assign distinct secret numbers drawn from 1–10 to players.
+ * Shuffles the full 1-10 pool and deals N cards (like real Top Ten).
+ * With 4 players you might get [2, 5, 7, 10] — not sequential 1-4.
  */
 export function assignSecretNumbers(playerIds) {
   const n = Math.min(playerIds.length, 10);
-  const numbers = Array.from({ length: n }, (_, i) => i + 1);
+  const pool = Array.from({ length: 10 }, (_, i) => i + 1);
 
-  // Fisher-Yates shuffle
-  for (let i = numbers.length - 1; i > 0; i--) {
+  // Fisher-Yates shuffle the full pool
+  for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
+    [pool[i], pool[j]] = [pool[j], pool[i]];
   }
 
+  // Deal the first N numbers to players
   const assignments = {};
-  for (let i = 0; i < playerIds.length; i++) {
-    assignments[playerIds[i]] = numbers[i % n];
+  for (let i = 0; i < n; i++) {
+    assignments[playerIds[i]] = pool[i];
   }
   return assignments;
 }
@@ -153,8 +169,9 @@ export async function buildRoomState(roomId) {
       code: room.code,
       hostId: room.host_id,
       status: room.status,
-      lives: room.lives,
+      score: room.score,
       roundIndex: room.round_index,
+      categories: room.categories || [],
     },
     players: players.map((p) => ({
       id: p.id,

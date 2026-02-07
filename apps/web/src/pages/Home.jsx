@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { createRoom, joinRoom } from '@/lib/api';
+import { Badge } from '@/components/ui/badge';
+import { createRoom, joinRoom, fetchCategories } from '@/lib/api';
 import { getClientId } from '@/lib/clientId';
 
 export default function Home() {
@@ -12,11 +13,26 @@ export default function Home() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const [availableCategories, setAvailableCategories] = useState([]);
+  const [selectedCategories, setSelectedCategories] = useState([]);
+
+  useEffect(() => {
+    fetchCategories()
+      .then((data) => setAvailableCategories(data.categories || []))
+      .catch(() => {});
+  }, []);
+
+  function toggleCategory(cat) {
+    setSelectedCategories((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+  }
+
   async function handleCreate() {
     setError('');
     setLoading(true);
     try {
-      const room = await createRoom();
+      const room = await createRoom(selectedCategories);
       navigate(`/join/${room.code}`);
     } catch (err) {
       setError(err.message);
@@ -62,7 +78,35 @@ export default function Home() {
           <CardHeader className="pb-4">
             <CardTitle className="text-xl">Create a Room</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {/* Category selection */}
+            {availableCategories.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">
+                  Choose themes {selectedCategories.length === 0 && '(all by default)'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {availableCategories.map((cat) => {
+                    const isSelected = selectedCategories.includes(cat);
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => toggleCategory(cat)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium border-2 transition-colors capitalize ${
+                          isSelected
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border bg-background text-foreground hover:border-primary/50'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <Button
               size="lg"
               className="w-full text-lg"

@@ -7,8 +7,9 @@ const SCHEMA = `
     host_id       UUID,
     status        VARCHAR(20) NOT NULL DEFAULT 'lobby'
                     CHECK (status IN ('lobby','in_game','finished')),
-    lives         INTEGER NOT NULL DEFAULT 5,
+    score         INTEGER NOT NULL DEFAULT 0,
     round_index   INTEGER NOT NULL DEFAULT 0,
+    categories    TEXT[] NOT NULL DEFAULT '{}',
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
 

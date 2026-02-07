@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 
 import { initDb, getPool } from './db/pool.js';
 import { runMigrations } from './db/migrate.js';
-import { loadQuestions } from './questions/loader.js';
+import { loadQuestions, questionStats } from './questions/loader.js';
 import { createSocketServer } from './socket/index.js';
 import { createRoomRouter } from './routes/rooms.js';
 import { createUploadRouter } from './routes/uploads.js';
@@ -49,7 +49,9 @@ async function boot() {
   const io = createSocketServer(server, questions);
 
   // 4. REST routes
-  app.use('/api/rooms', createRoomRouter(questions));
+  const availableCategories = Object.keys(questionStats(questions));
+  console.log(`[boot] Categories: ${availableCategories.join(', ')}`);
+  app.use('/api/rooms', createRoomRouter(questions, availableCategories));
   app.use('/api/uploads', createUploadRouter(uploadsDir));
   app.use('/api/health', createHealthRouter());
   app.use('/api/questions', createQuestionsRouter(questions));

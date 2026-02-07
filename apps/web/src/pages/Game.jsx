@@ -17,7 +17,7 @@ export default function Game() {
 
   const [players, setPlayers] = useState([]);
   const [hostId, setHostId] = useState(null);
-  const [lives, setLives] = useState(5);
+  const [score, setScore] = useState(0);
   const [round, setRound] = useState(null);
   const [secretNumber, setSecretNumber] = useState(null);
   const [answers, setAnswers] = useState([]);
@@ -35,7 +35,7 @@ export default function Game() {
     if (!state?.room) return;
     setPlayers(state.players || []);
     setHostId(state.room.hostId);
-    setLives(state.room.lives);
+    setScore(state.room.score ?? 0);
 
     if (state.room.status === 'lobby') {
       navigate(`/room/${code}/lobby`);
@@ -46,7 +46,7 @@ export default function Game() {
       setGameOver({
         reason: 'reconnected_finished',
         roundsPlayed: state.room.roundIndex + 1,
-        finalLives: state.room.lives,
+        finalScore: state.room.score ?? 0,
       });
       return;
     }
@@ -54,7 +54,6 @@ export default function Game() {
     if (state.currentRound) {
       setRound(state.currentRound);
 
-      // Restore answers if in ordering/reveal
       if (state.answers?.length > 0) {
         const myAnswer = state.answers.find((a) => a.playerId === myPlayerId);
         if (myAnswer?.text) setSubmitted(true);
@@ -83,7 +82,7 @@ export default function Game() {
               text: a.text,
             };
           }),
-          lives: state.room.lives,
+          score: state.room.score ?? 0,
         });
       }
     }
@@ -122,9 +121,10 @@ export default function Game() {
     socket.on('reveal_results', (data) => {
       setRound((prev) => (prev ? { ...prev, state: 'reveal' } : prev));
       setRevealData(data);
+      if (data.score !== undefined) setScore(data.score);
     });
 
-    socket.on('lives_update', ({ lives: l }) => setLives(l));
+    socket.on('score_update', ({ score: s }) => setScore(s));
 
     socket.on('game_finished', (data) => setGameOver(data));
 
@@ -135,7 +135,7 @@ export default function Game() {
       socket.off('your_secret_number');
       socket.off('all_answers_collected');
       socket.off('reveal_results');
-      socket.off('lives_update');
+      socket.off('score_update');
       socket.off('game_finished');
     };
   }, [getSocket, handleRoomState]);
@@ -163,7 +163,6 @@ export default function Game() {
   // ── GAME OVER ──────────────────────────────────
   if (gameOver) {
     const reasonText = {
-      no_lives: 'You ran out of lives!',
       no_questions: 'All questions have been answered!',
       not_enough_players: 'Not enough players connected.',
       reconnected_finished: 'This game has ended.',
@@ -185,8 +184,10 @@ export default function Game() {
                 <p className="text-sm text-muted-foreground">Rounds</p>
               </div>
               <div>
-                <p className="text-3xl font-bold text-primary">{gameOver.finalLives}</p>
-                <p className="text-sm text-muted-foreground">Lives Left</p>
+                <p className={`text-3xl font-bold ${(gameOver.finalScore ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {(gameOver.finalScore ?? 0) >= 0 ? '+' : ''}{gameOver.finalScore ?? 0}
+                </p>
+                <p className="text-sm text-muted-foreground">Final Score</p>
               </div>
             </div>
             <Button
@@ -224,19 +225,12 @@ export default function Game() {
           <Badge variant="secondary" className="text-sm">
             Round {(round.roundIndex ?? 0) + 1}
           </Badge>
-          <Badge variant="outline" className="text-sm">
+          <Badge variant="outline" className="text-sm capitalize">
             {round.category}
           </Badge>
         </div>
-        <div className="flex items-center gap-1">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div
-              key={i}
-              className={`w-4 h-4 rounded-full ${
-                i < lives ? 'bg-red-500' : 'bg-gray-200'
-              }`}
-            />
-          ))}
+        <div className={`text-lg font-bold ${score >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+          {score >= 0 ? '+' : ''}{score} pts
         </div>
       </div>
 
@@ -284,7 +278,7 @@ export default function Game() {
                     <p className="text-sm text-muted-foreground">Your secret number</p>
                     <p className="text-5xl font-extrabold text-primary">{secretNumber}</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      1 = lowest, {round.playerCount} = highest
+                      1 = lowest, 10 = highest
                     </p>
                   </div>
                 )}
@@ -345,27 +339,36 @@ export default function Game() {
       {/* ── REVEAL PHASE ──────────────────────────── */}
       {round.state === 'reveal' && revealData && (
         <div className="space-y-4">
-          <Card className={revealData.errorCount === 0 ? 'border-green-500' : 'border-red-500'}>
-            <CardContent className="p-4 text-center">
+          {/* Round score summary */}
+          <Card className={revealData.errorCount === 0 ? 'border-green-500' : 'border-border'}>
+            <CardContent className="p-4 text-center space-y-1">
               {revealData.errorCount === 0 ? (
                 <p className="text-xl font-bold text-green-600">Perfect round!</p>
               ) : (
-                <p className="text-xl font-bold text-red-600">
-                  {revealData.errorCount} mistake{revealData.errorCount !== 1 ? 's' : ''} — lost{' '}
-                  {revealData.errorCount} {revealData.errorCount !== 1 ? 'lives' : 'life'}
+                <p className="text-xl font-bold">
+                  {revealData.correctCount ?? (revealData.answers?.length - revealData.errorCount)} correct,{' '}
+                  {revealData.errorCount} wrong
                 </p>
               )}
+              <p className={`text-lg font-semibold ${(revealData.roundPoints ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {(revealData.roundPoints ?? 0) >= 0 ? '+' : ''}{revealData.roundPoints ?? 0} points this round
+              </p>
             </CardContent>
           </Card>
 
           {/* Reveal table */}
           <Card>
             <CardContent className="p-4 space-y-2">
-              {revealData.answers
+              {[...revealData.answers]
                 .sort((a, b) => a.secretNumber - b.secretNumber)
-                .map((answer) => {
+                .map((answer, idx) => {
                   const captainPos = revealData.captainOrder?.indexOf(answer.playerId);
-                  const isCorrectPos = captainPos === answer.secretNumber - 1;
+                  // correctOrder is the sorted-by-number order; check position match
+                  const correctOrder = [...revealData.answers]
+                    .sort((a2, b2) => a2.secretNumber - b2.secretNumber)
+                    .map((a2) => a2.playerId);
+                  const isCorrectPos = captainPos === correctOrder.indexOf(answer.playerId);
+
                   return (
                     <div
                       key={answer.playerId}
@@ -394,7 +397,7 @@ export default function Game() {
           </Card>
 
           {/* Next round button (host only) */}
-          {isHost && lives > 0 && (
+          {isHost && (
             <Button size="lg" className="w-full" onClick={handleNextRound}>
               Next Round
             </Button>

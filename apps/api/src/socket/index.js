@@ -264,12 +264,16 @@ export function createSocketServer(httpServer, allQuestions) {
           [round.id, orderedPlayerIds, errorCount]
         );
 
-        // Update lives
+        // Calculate points: +1 per correct position, -1 per error
+        const correctCount = orderedPlayerIds.length - errorCount;
+        const roundPoints = correctCount - errorCount;
+
+        // Update score
         const { rows: roomRows } = await query(
-          `UPDATE rooms SET lives = GREATEST(0, lives - $1) WHERE id = $2 RETURNING lives`,
-          [errorCount, roomId]
+          `UPDATE rooms SET score = score + $1 WHERE id = $2 RETURNING score`,
+          [roundPoints, roomId]
         );
-        const newLives = roomRows[0].lives;
+        const newScore = roomRows[0].score;
 
         // Move round to reveal
         await query(
@@ -292,6 +296,8 @@ export function createSocketServer(httpServer, allQuestions) {
           captainOrder: orderedPlayerIds,
           correctOrder,
           errorCount,
+          correctCount,
+          roundPoints,
           details,
           answers: fullAnswers.map((a) => ({
             playerId: a.player_id,
@@ -299,28 +305,10 @@ export function createSocketServer(httpServer, allQuestions) {
             secretNumber: a.secret_number,
             text: a.text,
           })),
-          lives: newLives,
+          score: newScore,
         });
 
-        io.to(roomCode).emit('lives_update', { lives: newLives });
-
-        // Game over check
-        if (newLives <= 0) {
-          await query(
-            `UPDATE rooms SET status = 'finished' WHERE id = $1`, [roomId]
-          );
-          await query(
-            `UPDATE rounds SET state = 'done' WHERE id = $1`, [round.id]
-          );
-          const { rows: rd } = await query(
-            `SELECT round_index FROM rooms WHERE id = $1`, [roomId]
-          );
-          io.to(roomCode).emit('game_finished', {
-            reason: 'no_lives',
-            roundsPlayed: rd[0].round_index + 1,
-            finalLives: 0,
-          });
-        }
+        io.to(roomCode).emit('score_update', { score: newScore });
       } catch (err) {
         console.error('[ws] submit_ordering error:', err);
         ack?.({ error: 'Server error' });
@@ -413,11 +401,11 @@ async function startNewRound(io, roomId, roomCode, roundIndex, allQuestions) {
   const question = await pickQuestion(roomId, allQuestions);
   if (!question) {
     await query(`UPDATE rooms SET status = 'finished' WHERE id = $1`, [roomId]);
-    const { rows } = await query(`SELECT lives FROM rooms WHERE id = $1`, [roomId]);
+    const { rows } = await query(`SELECT score FROM rooms WHERE id = $1`, [roomId]);
     io.to(roomCode).emit('game_finished', {
       reason: 'no_questions',
       roundsPlayed: roundIndex,
-      finalLives: rows[0]?.lives ?? 0,
+      finalScore: rows[0]?.score ?? 0,
     });
     return;
   }
@@ -431,7 +419,7 @@ async function startNewRound(io, roomId, roomCode, roundIndex, allQuestions) {
     io.to(roomCode).emit('game_finished', {
       reason: 'not_enough_players',
       roundsPlayed: roundIndex,
-      finalLives: 0,
+      finalScore: 0,
     });
     return;
   }

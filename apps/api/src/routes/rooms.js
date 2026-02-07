@@ -5,7 +5,7 @@ import { generateRoomCode } from '../utils/roomCode.js';
 import { validateNickname, validateRoomCode } from '../utils/validation.js';
 import { createBruteForceMiddleware } from '../middleware/bruteForce.js';
 
-export function createRoomRouter(questions) {
+export function createRoomRouter(questions, availableCategories) {
   const router = Router();
 
   // Rate limit: create room
@@ -28,13 +28,31 @@ export function createRoomRouter(questions) {
 
   const bruteForce = createBruteForceMiddleware();
 
-  // POST /api/rooms — Create a new room
+  // GET /api/rooms/categories — List available question categories
+  router.get('/categories', (req, res) => {
+    res.json({ categories: availableCategories });
+  });
+
+  // POST /api/rooms — Create a new room with optional category selection
   router.post('/', createRoomLimiter, async (req, res) => {
     try {
+      const { categories: selected } = req.body || {};
+
+      // Validate categories if provided
+      let cats = [];
+      if (Array.isArray(selected) && selected.length > 0) {
+        cats = selected.filter((c) => availableCategories.includes(c));
+        if (cats.length === 0) {
+          return res.status(400).json({ error: 'No valid categories selected' });
+        }
+      }
+      // Empty array = all categories
+
       const code = await generateRoomCode();
       const { rows } = await query(
-        `INSERT INTO rooms (code) VALUES ($1) RETURNING id, code, status, lives, round_index, created_at`,
-        [code]
+        `INSERT INTO rooms (code, categories) VALUES ($1, $2)
+         RETURNING id, code, status, score, round_index, categories, created_at`,
+        [code, cats]
       );
       res.status(201).json(rows[0]);
     } catch (err) {
