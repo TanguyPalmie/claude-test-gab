@@ -1,0 +1,16 @@
+{
+  "name": "topten-game",
+  "private": true,
+  "scripts": {
+    "dev:api": "pnpm --filter @topten/api dev",
+    "dev:web": "pnpm --filter @topten/web dev",
+    "dev": "pnpm run --parallel dev:api dev:web",
+    "build:api": "echo 'API is plain JS, no build needed'",
+    "build:web": "pnpm --filter @topten/web build",
+    "build": "pnpm run build:web"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  }
+}
